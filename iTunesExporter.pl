@@ -38,9 +38,9 @@ while ( my ( $artist, $artistSongs ) = each %items ) {
 
             # purchased items that aren't downloaded don't have a location
             if ($location) {
-                $location = fix_file_name($location);
+                $location = fix_file_name($location) if $location;
 
-                if ( -r $location && $location =~ m/^\Q$source_root\E/ ) {
+                if ( $location && -r $location && $location =~ m/^\Q$source_root\E/ ) {
                     $location =~ s/^\Q$source_root\E/\//;
 
                     $copy_list{$location} = 1;
@@ -75,11 +75,16 @@ my $rsync = File::Rsync->new(
     }
 );
 
-logger( "runnng rsync",
-    @( $rsync->getcmd( { src => $source_root, dest => $target } ) ) );
+my $rsync_cmd = $rsync->getcmd( { src => $source_root, dest => $target } );
 
-$rsync->exec( { src => $source_root, dest => $target } )
-  or warn "rsync failed $!";
+logger( "runnng rsync", @$rsync_cmd );
+
+$rsync->exec(
+    {
+        src  => $source_root,
+        dest => $target
+    }
+) or warn "rsync failed $!";
 
 logger("writing playlists");
 
@@ -87,39 +92,39 @@ logger("writing playlists");
 my %playlists = $library->playlists();
 while ( my ( $playlist_id, $playlist ) = each %playlists ) {
 
-      my $playlist_name = $playlist->name();
-      my $m3u_location  = "$target/$playlist_name.m3u";
+    my $playlist_name = $playlist->name();
+    my $m3u_location  = "$target/$playlist_name.m3u";
 
-      if ( !$playlist->{items} || ref $playlist->{items} ne 'ARRAY' ) {
-          next;
-      }
+    if ( !$playlist->{items} || ref $playlist->{items} ne 'ARRAY' ) {
+        next;
+    }
 
-      open my $fh, '>', $m3u_location;
+    open my $fh, '>', $m3u_location;
 
-      logger( "writing playlist", $m3u_location );
+    logger( "writing playlist", $m3u_location );
 
-      for my $item ( $playlist->items() ) {
-          my $location = fix_file_name( $item->location );
+    for my $item ( $playlist->items() ) {
+        my $location = fix_file_name( $item->location ) if $item->location;
 
-          if ( -r $location && $location =~ m/^\Q$source_root\E/ ) {
+        if ( $location && -r $location && $location =~ m/^\Q$source_root\E/ ) {
 
-              $location =~ s/^\Q$source_root\E//;
-              print $fh $location . $/;
-          }
-      }
+            $location =~ s/^\Q$source_root\E//;
+            print $fh $location . $/;
+        }
+    }
 
-      close $fh;
+    close $fh;
 }
 
 logger("Done");
 
 sub fix_file_name {
-      my ($location) = @_;
-      $location =~ s/^file:\/\///;
-      $location = $uri->decode($location);
-      return $location;
+    my ($location) = @_;
+    $location =~ s/^file:\/\///;
+    $location = $uri->decode($location);
+    return $location;
 }
 
 sub logger {
-      print STDERR join( "\t", @_ ) . $/;
+    print STDERR join( "\t", @_ ) . $/;
 }
