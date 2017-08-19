@@ -26,5 +26,5 @@ This will copy all readable items in your iTunes library to the target location,
 
 Files in the target directory that aren't in the library will be deleted.
 
-I developed this for my own use with an AGPTek Rocker mp3 player and offer it as is. I've tested it with about 7000 files on a 128SD card. Repeated runs of the script should be quicker, as it doesn't copy files already present in the target directory.
+I developed this for my own use with an AGPTek Rocker mp3 player and offer it as is. I've tested it with about 7000 files on a 128Gb micro SD card. Repeated runs of the script should be quicker, as it doesn't copy files already present in the target directory.
 
