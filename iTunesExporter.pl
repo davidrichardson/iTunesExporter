@@ -8,11 +8,10 @@ use File::Path qw(make_path);
 use File::Temp;
 use File::Rsync;
 use Mac::iTunes::Library::XML;
-use URI::Encode;
+use Encode;
+use URI::Escape;
 
 use Data::Dumper;
-
-my $uri = URI::Encode->new( { encode_reserved => 0 } );
 
 my $library_path = $ARGV[0];
 my $target       = $ARGV[1];
@@ -38,9 +37,13 @@ while ( my ( $artist, $artistSongs ) = each %items ) {
 
             # purchased items that aren't downloaded don't have a location
             if ($location) {
-                $location = fix_file_name($location) if $location;
 
-                if ( $location && -r $location && $location =~ m/^\Q$source_root\E/ ) {
+                if (   $location
+                    && $location =~ m/^file\:/
+                    && $location =~ m/\Q$source_root\E/ )
+                {
+                    $location = fix_file_name($location) if $location;
+
                     $location =~ s/^\Q$source_root\E/\//;
 
                     $copy_list{$location} = 1;
@@ -53,12 +56,15 @@ while ( my ( $artist, $artistSongs ) = each %items ) {
                     }
                 }
             }
+
         }
     }
 }
 
 my $rsync_list_fh       = File::Temp->new();
 my $rsync_list_filename = $rsync_list_fh->filename;
+
+binmode( $rsync_list_fh, ":utf8" );
 
 logger( "Writing $track_counter tracks to rsync list", $rsync_list_filename );
 
@@ -93,20 +99,25 @@ my %playlists = $library->playlists();
 while ( my ( $playlist_id, $playlist ) = each %playlists ) {
 
     my $playlist_name = $playlist->name();
-    my $m3u_location  = "$target/$playlist_name.m3u";
+    my $m3u_location  = "$target/$playlist_name.m3u8";
 
     if ( !$playlist->{items} || ref $playlist->{items} ne 'ARRAY' ) {
         next;
     }
 
     open my $fh, '>', $m3u_location;
+    binmode $fh, ':utf8';
 
     logger( "writing playlist", $m3u_location );
 
     for my $item ( $playlist->items() ) {
-        my $location = fix_file_name( $item->location ) if $item->location;
+        my $location = $item->location();
 
-        if ( $location && -r $location && $location =~ m/^\Q$source_root\E/ ) {
+        if (   $location
+            && $location =~ m/^file\:/
+            && $location =~ m/\Q$source_root\E/ )
+        {
+            $location = fix_file_name( $item->location );
 
             $location =~ s/^\Q$source_root\E//;
             print $fh $location . $/;
@@ -121,7 +132,7 @@ logger("Done");
 sub fix_file_name {
     my ($location) = @_;
     $location =~ s/^file:\/\///;
-    $location = $uri->decode($location);
+    $location = Encode::decode( 'utf8', uri_unescape($location) );
     return $location;
 }
 
