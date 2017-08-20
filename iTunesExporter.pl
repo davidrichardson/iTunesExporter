@@ -36,25 +36,24 @@ while ( my ( $artist, $artistSongs ) = each %items ) {
             my $location = $item->location();
 
             # purchased items that aren't downloaded don't have a location
-            if ($location) {
+            if (   $location
+                && $location =~ m/^file\:/
+                && $location =~ m/\Q$source_root\E/ )
+            {
 
-                if (   $location
-                    && $location =~ m/^file\:/
-                    && $location =~ m/\Q$source_root\E/ )
-                {
-                    $location = fix_file_name($location) if $location;
+                $location = fix_file_name($location);
 
-                    $location =~ s/^\Q$source_root\E/\//;
+                $location =~ s/^\Q$source_root\E/\//;
 
-                    $copy_list{$location} = 1;
+                $copy_list{$location} = 1;
 
-                    $track_counter++;
+                $track_counter++;
 
-                    if ( $track_counter % 100 == 0 ) {
-                        logger( "$track_counter tracks added, track is",
-                            $location );
-                    }
+                if ( $track_counter % 100 == 0 ) {
+                    logger( "$track_counter tracks added, track is",
+                        $location );
                 }
+
             }
 
         }
@@ -91,7 +90,6 @@ $rsync->exec(
         dest => $target
     }
 ) or warn "rsync failed $!";
-
 logger("writing playlists");
 
 #playlists
