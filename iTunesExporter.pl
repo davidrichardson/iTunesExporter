@@ -10,13 +10,18 @@ use File::Rsync;
 use Mac::iTunes::Library::XML;
 use Encode;
 use URI::Escape;
-
+use File::Find;
 use Data::Dumper;
+use Encode qw(decode);
 
 my $library_path = $ARGV[0];
 my $target       = $ARGV[1];
+my $dry_run      = $ARGV[2];
 
 my %copy_list;
+my %lc_copy_list;
+
+my $rsync_path = '/usr/local/bin/rsync';
 
 logger("Reading $library_path");
 
@@ -46,6 +51,7 @@ while ( my ( $artist, $artistSongs ) = each %items ) {
                 $location =~ s/^\Q$source_root\E/\//;
 
                 $copy_list{$location} = 1;
+                $lc_copy_list{ lc($location) } = 1;
 
                 $track_counter++;
 
@@ -60,10 +66,37 @@ while ( my ( $artist, $artistSongs ) = each %items ) {
     }
 }
 
-my $rsync_list_fh       = File::Temp->new();
-my $rsync_list_filename = $rsync_list_fh->filename;
+logger("Building current target list");
+find(
+    sub {
+        my $file_path = decode( 'utf8', $File::Find::name );
+        my $file = $file_path;
+        $file =~ s/^\Q$target\E//;
 
-binmode( $rsync_list_fh, ":utf8" );
+        return if ( -d $File::Find::name );
+        return if ( !$file || $file =~ m/^\/\./ );
+
+        if ( !$lc_copy_list{ lc($file) } ) {
+            print "removing $File::Find::name $/";
+            unlink $File::Find::name;
+        }
+
+    },
+    $target
+);
+
+my ( $rsync_list_fh, $rsync_list_filename );
+
+if ($dry_run) {
+    binmode( STDOUT, ":utf8" );
+    $rsync_list_fh       = *STDOUT;
+    $rsync_list_filename = 'FILE';
+}
+else {
+    $rsync_list_fh       = File::Temp->new();
+    $rsync_list_filename = $rsync_list_fh->filename;
+    binmode( $rsync_list_fh, ":utf8" );
+}
 
 logger( "Writing $track_counter tracks to rsync list", $rsync_list_filename );
 
@@ -74,13 +107,19 @@ close $rsync_list_fh;
 
 my $rsync = File::Rsync->new(
     {
-        'archive'       => 1,
-        'delete-before' => 1,
-        'files-from'    => $rsync_list_filename
+        'archive'    => 1,
+        'delete'     => 1,
+        'files-from' => $rsync_list_filename,
+        'rsync-path' => $rsync_path,
     }
 );
 
 my $rsync_cmd = $rsync->getcmd( { src => $source_root, dest => $target } );
+
+if ($dry_run) {
+    logger("Dry run, @$rsync_cmd");
+    exit 0;
+}
 
 logger( "runnng rsync", @$rsync_cmd );
 
@@ -108,6 +147,8 @@ while ( my ( $playlist_id, $playlist ) = each %playlists ) {
 
     logger( "writing playlist", $m3u_location );
 
+    print $fh "#EXTM3U$/";
+
     for my $item ( $playlist->items() ) {
         my $location = $item->location();
 
@@ -118,6 +159,16 @@ while ( my ( $playlist_id, $playlist ) = each %playlists ) {
             $location = fix_file_name( $item->location );
 
             $location =~ s/^\Q$source_root\E//;
+
+            my ( $timeMillis, $artist, $track ) = (
+                $item->totalTime,
+                $item->artist // $item->albumArtist // '',
+                $item->name // ''
+            );
+            my $timeSeconds = int( ( $timeMillis / 1000 ) + 0.5 );
+
+            print $fh "#EXTINF:$timeSeconds,$artist - $track$/";
+
             print $fh $location . $/;
         }
     }
